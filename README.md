@@ -40,7 +40,32 @@ docs/                       # Architecture notes, decisions, assumptions
 
 ## Running Locally
 
-(Setup instructions will be added here once the service is runnable end-to-end.)
+Requires Python 3.11+.
+
+```bash
+python -m venv .venv
+.venv/Scripts/activate        # on Windows; use `source .venv/bin/activate` on macOS/Linux
+pip install -r requirements.txt
+```
+
+Run the two mock suppliers and the main API (three separate terminals):
+
+```bash
+uvicorn app.mock_suppliers.atlas_api:app --port 9001
+uvicorn app.mock_suppliers.nova_api:app --port 9002
+uvicorn app.api.main:app --port 8000
+```
+
+Try a search:
+
+```bash
+curl -X POST http://127.0.0.1:8000/search/hotels \
+  -H "Content-Type: application/json" \
+  -d '{"destination": "Mumbai", "check_in": "2026-09-10", "check_out": "2026-09-12", "guests": 2, "rooms": 1}'
+```
+
+Booking (Temporal workflow), full docker-compose setup, and automated
+tests are still being built - see commit history for current progress.
 
 ## How AI Coding Assistants Were Used
 
