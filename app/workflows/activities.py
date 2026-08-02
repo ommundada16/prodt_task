@@ -53,12 +53,17 @@ async def create_supplier_reservation(input: BookingRequestInput) -> str:
     processed it), the supplier returns the existing reservation instead
     of creating a second one."""
     adapter = _adapter_for(input.supplier_id)
-    return await adapter.create_reservation(
+    reference = await adapter.create_reservation(
         input.supplier_property_id,
         _search_request(input),
         idempotency_key=input.idempotency_key,
         simulate_failures=input.simulate_supplier_failures,
     )
+    activity.logger.info(
+        f"idempotency_key={input.idempotency_key} supplier={input.supplier_id} "
+        f"supplier_reference={reference} action=reservation_created"
+    )
+    return reference
 
 
 @activity.defn
@@ -89,6 +94,10 @@ async def save_booking_record(input: BookingRequestInput, supplier_reservation_r
 
         db.add(BookingStatusHistoryRecord(booking_id=booking.id, status="reserved", note="Supplier reservation created"))
         db.commit()
+        activity.logger.info(
+            f"booking_id={booking.id} workflow_id={workflow_id} supplier={input.supplier_id} "
+            f"supplier_reference={supplier_reservation_reference} action=booking_saved"
+        )
         return booking.id
     finally:
         db.close()
@@ -111,6 +120,7 @@ async def update_booking_status(booking_id: int, status: str, note: Optional[str
         booking.status = status
         db.add(BookingStatusHistoryRecord(booking_id=booking_id, status=status, note=note))
         db.commit()
+        activity.logger.info(f"booking_id={booking_id} status={status} action=status_updated")
     finally:
         db.close()
 
@@ -118,4 +128,9 @@ async def update_booking_status(booking_id: int, status: str, note: Optional[str
 @activity.defn
 async def cancel_supplier_reservation(input: BookingRequestInput, supplier_reservation_reference: str) -> bool:
     adapter = _adapter_for(input.supplier_id)
-    return await adapter.cancel_reservation(supplier_reservation_reference)
+    cancelled = await adapter.cancel_reservation(supplier_reservation_reference)
+    activity.logger.info(
+        f"supplier={input.supplier_id} supplier_reference={supplier_reservation_reference} "
+        f"action=supplier_cancel result={cancelled}"
+    )
+    return cancelled

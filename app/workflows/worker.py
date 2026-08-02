@@ -13,6 +13,7 @@ from temporalio.client import Client
 from temporalio.worker import Worker
 
 from app.db.database import init_db
+from app.logging_config import configure_logging
 from app.workflows import activities
 from app.workflows.booking_workflow import BookingWorkflow
 
@@ -21,6 +22,7 @@ TEMPORAL_SERVER_ADDRESS = "localhost:7233"
 
 
 async def main() -> None:
+    configure_logging()
     init_db()
     client = await Client.connect(TEMPORAL_SERVER_ADDRESS)
     worker = Worker(

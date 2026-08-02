@@ -1,10 +1,15 @@
 """FastAPI app exposing the unified hotel search and booking endpoints."""
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
-from temporalio.client import WorkflowFailureError
+import logging
+import uuid
 
-from app.db.database import init_db
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
+
+from app.db.database import get_db, init_db
+from app.db.repository import save_search_and_offers
+from app.logging_config import configure_logging
 from app.schemas import BookHotelRequest, HotelOffer, SearchRequest
 from app.services.search_service import search_all_suppliers
 from app.suppliers.atlas_adapter import AtlasAdapter
@@ -14,7 +19,19 @@ from app.workflows.client import get_temporal_client
 from app.workflows.models import BookingRequestInput
 from app.workflows.worker import TASK_QUEUE
 
+configure_logging()
+logger = logging.getLogger("app.api")
+
 app = FastAPI(title="Travel Supplier Aggregator")
+
+
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    request.state.request_id = str(uuid.uuid4())
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request.state.request_id
+    return response
+
 
 # Adding a new supplier here (and to this list) is the only change needed
 # to make it show up in search - search_service.py doesn't change at all.
@@ -33,8 +50,13 @@ def home():
 
 
 @app.post("/search/hotels", response_model=list[HotelOffer])
-async def search_hotels(request: SearchRequest) -> list[HotelOffer]:
-    return await search_all_suppliers(SUPPLIER_ADAPTERS, request)
+async def search_hotels(request: SearchRequest, http_request: Request, db: Session = Depends(get_db)) -> list[HotelOffer]:
+    request_id = http_request.state.request_id
+    logger.info(f"request_id={request_id} action=search destination={request.destination}")
+    offers = await search_all_suppliers(SUPPLIER_ADAPTERS, request)
+    save_search_and_offers(db, request, offers)
+    logger.info(f"request_id={request_id} action=search_complete result_count={len(offers)}")
+    return offers
 
 
 def _workflow_id_for(idempotency_key: str) -> str:
@@ -42,7 +64,7 @@ def _workflow_id_for(idempotency_key: str) -> str:
 
 
 @app.post("/bookings")
-async def create_booking(request: BookHotelRequest):
+async def create_booking(request: BookHotelRequest, http_request: Request):
     """
     Starts the booking workflow. The workflow ID is derived from
     idempotency_key, and Temporal rejects starting a second workflow with
@@ -52,6 +74,11 @@ async def create_booking(request: BookHotelRequest):
     """
     client = await get_temporal_client()
     workflow_id = _workflow_id_for(request.idempotency_key)
+    logger.info(
+        f"request_id={http_request.state.request_id} action=create_booking "
+        f"workflow_id={workflow_id} supplier={request.supplier_id} "
+        f"supplier_property_id={request.supplier_property_id}"
+    )
 
     workflow_input = BookingRequestInput(
         idempotency_key=request.idempotency_key,
@@ -89,14 +116,18 @@ async def get_booking_status(workflow_id: str):
 
 @app.get("/bookings/{workflow_id}/result")
 async def get_booking_result(workflow_id: str):
-    """Waits for the workflow to finish and returns its final result."""
+    """
+    Returns the booking's current details. Uses a query rather than waiting
+    on workflow completion, because a confirmed booking's workflow stays
+    open (to remain cancellable) rather than finishing - waiting on it
+    would hang forever for a confirmed booking.
+    """
     client = await get_temporal_client()
     handle = client.get_workflow_handle(workflow_id)
     try:
-        result = await handle.result()
-    except WorkflowFailureError as exc:
-        raise HTTPException(status_code=500, detail=f"Booking workflow failed: {exc}")
-    return result
+        return await handle.query(BookingWorkflow.details)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Booking workflow not found")
 
 
 @app.post("/bookings/{workflow_id}/cancel")
