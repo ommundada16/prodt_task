@@ -24,13 +24,27 @@ class SupplierAdapter(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def create_reservation(self, property_id: str, request: SearchRequest) -> str:
-        """Create a reservation with the supplier. Returns the supplier's reservation reference."""
+    async def create_reservation(
+        self, property_id: str, request: SearchRequest, idempotency_key: str, simulate_failures: int = 0
+    ) -> str:
+        """
+        Create a reservation with the supplier. Returns the supplier's reservation reference.
+
+        idempotency_key is passed through to the supplier so that retrying this call (e.g.
+        after a network timeout) reuses the existing reservation instead of creating a
+        duplicate one. simulate_failures lets tests/demos force the supplier to fail the
+        first N attempts, to exercise retry behaviour.
+        """
         raise NotImplementedError
 
     @abstractmethod
     async def get_reservation_status(self, reservation_reference: str) -> str:
-        """Look up the current status of a reservation at the supplier."""
+        """Look up the current status of a reservation at the supplier, in the supplier's own wording."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def normalize_reservation_status(self, raw_status: str) -> str:
+        """Map the supplier's own status wording to one of: pending, confirmed, cancelled, failed."""
         raise NotImplementedError
 
     @abstractmethod

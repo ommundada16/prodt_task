@@ -56,6 +56,12 @@ ATLAS_PROPERTIES = [
 
 # In-memory reservations, keyed by confirmation code.
 ATLAS_RESERVATIONS: dict[str, dict] = {}
+# Maps idempotency_key -> confirmation_code, so a retried booking request
+# returns the existing reservation instead of creating a second one.
+ATLAS_IDEMPOTENCY_INDEX: dict[str, str] = {}
+# Remaining forced-failure count per idempotency_key, used to simulate a
+# flaky supplier for testing retry behaviour.
+ATLAS_REMAINING_FAILURES: dict[str, int] = {}
 _next_reservation_number = 1
 
 
@@ -71,6 +77,8 @@ class AtlasBookingRequest(BaseModel):
     check_in: date
     check_out: date
     num_rooms: int
+    idempotency_key: str
+    simulate_failures: int = 0
 
 
 @app.post("/atlas/v1/search")
@@ -86,6 +94,16 @@ def get_price(hotel_id: str):
 @app.post("/atlas/v1/reservations")
 def create_reservation(req: AtlasBookingRequest):
     global _next_reservation_number
+
+    existing_code = ATLAS_IDEMPOTENCY_INDEX.get(req.idempotency_key)
+    if existing_code:
+        return ATLAS_RESERVATIONS[existing_code]
+
+    remaining_failures = ATLAS_REMAINING_FAILURES.setdefault(req.idempotency_key, req.simulate_failures)
+    if remaining_failures > 0:
+        ATLAS_REMAINING_FAILURES[req.idempotency_key] -= 1
+        raise HTTPException(status_code=503, detail="Atlas is temporarily unavailable")
+
     hotel = _find_hotel(req.hotel_id)
     if hotel["status"] == "SOLD_OUT":
         raise HTTPException(status_code=409, detail="Room no longer available")
@@ -95,8 +113,13 @@ def create_reservation(req: AtlasBookingRequest):
     ATLAS_RESERVATIONS[confirmation_code] = {
         "confirmation_code": confirmation_code,
         "hotel_id": req.hotel_id,
-        "state": "CONFIRMED",
+        # Real suppliers don't confirm instantly - starts PENDING and
+        # flips to CONFIRMED after a couple of status checks, so the
+        # workflow's polling loop has something real to do.
+        "state": "PENDING",
+        "status_checks": 0,
     }
+    ATLAS_IDEMPOTENCY_INDEX[req.idempotency_key] = confirmation_code
     return ATLAS_RESERVATIONS[confirmation_code]
 
 
@@ -105,6 +128,12 @@ def get_reservation(confirmation_code: str):
     reservation = ATLAS_RESERVATIONS.get(confirmation_code)
     if not reservation:
         raise HTTPException(status_code=404, detail="Reservation not found")
+
+    if reservation["state"] == "PENDING":
+        reservation["status_checks"] += 1
+        if reservation["status_checks"] >= 2:
+            reservation["state"] = "CONFIRMED"
+
     return reservation
 
 

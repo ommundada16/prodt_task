@@ -53,6 +53,12 @@ NOVA_PROPERTIES = [
 ]
 
 NOVA_BOOKINGS: dict[str, dict] = {}
+# Maps idempotencyKey -> bookingRef, so a retried booking request returns
+# the existing booking instead of creating a second one.
+NOVA_IDEMPOTENCY_INDEX: dict[str, str] = {}
+# Remaining forced-failure count per idempotencyKey, used to simulate a
+# flaky supplier for testing retry behaviour.
+NOVA_REMAINING_FAILURES: dict[str, int] = {}
 _next_booking_number = 1
 
 
@@ -68,6 +74,8 @@ class NovaBookingRequest(BaseModel):
     checkInDate: date
     checkOutDate: date
     roomsRequested: int
+    idempotencyKey: str
+    simulateFailures: int = 0
 
 
 @app.post("/nova/v2/properties/search")
@@ -83,6 +91,16 @@ def get_rate(property_id: str):
 @app.post("/nova/v2/bookings")
 def create_booking(req: NovaBookingRequest):
     global _next_booking_number
+
+    existing_ref = NOVA_IDEMPOTENCY_INDEX.get(req.idempotencyKey)
+    if existing_ref:
+        return NOVA_BOOKINGS[existing_ref]
+
+    remaining_failures = NOVA_REMAINING_FAILURES.setdefault(req.idempotencyKey, req.simulateFailures)
+    if remaining_failures > 0:
+        NOVA_REMAINING_FAILURES[req.idempotencyKey] -= 1
+        raise HTTPException(status_code=503, detail="Nova is temporarily unavailable")
+
     property_ = _find_property(req.propertyId)
     if not property_["availability"]["available"]:
         raise HTTPException(status_code=409, detail="Property not bookable")
@@ -92,8 +110,13 @@ def create_booking(req: NovaBookingRequest):
     NOVA_BOOKINGS[booking_ref] = {
         "bookingRef": booking_ref,
         "propertyId": req.propertyId,
-        "bookingStatus": "CONFIRMED",
+        # Starts IN_PROGRESS and flips to CONFIRMED after a couple of
+        # status checks, mirroring how a real supplier would take a
+        # moment to confirm rather than doing it synchronously.
+        "bookingStatus": "IN_PROGRESS",
+        "statusChecks": 0,
     }
+    NOVA_IDEMPOTENCY_INDEX[req.idempotencyKey] = booking_ref
     return NOVA_BOOKINGS[booking_ref]
 
 
@@ -102,6 +125,12 @@ def get_booking(booking_ref: str):
     booking = NOVA_BOOKINGS.get(booking_ref)
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
+
+    if booking["bookingStatus"] == "IN_PROGRESS":
+        booking["statusChecks"] += 1
+        if booking["statusChecks"] >= 2:
+            booking["bookingStatus"] = "CONFIRMED"
+
     return booking
 
 

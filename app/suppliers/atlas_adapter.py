@@ -16,6 +16,13 @@ ATLAS_STATUS_MAP = {
     "REQUEST": AvailabilityStatus.ON_REQUEST,
 }
 
+# Atlas's reservation-state wording -> our normalised booking status.
+ATLAS_RESERVATION_STATUS_MAP = {
+    "PENDING": "pending",
+    "CONFIRMED": "confirmed",
+    "CANCELLED": "cancelled",
+}
+
 
 class AtlasAdapter(SupplierAdapter):
     supplier_id = "atlas"
@@ -47,7 +54,9 @@ class AtlasAdapter(SupplierAdapter):
 
         return self._to_hotel_offer(hotel, request)
 
-    async def create_reservation(self, property_id: str, request: SearchRequest) -> str:
+    async def create_reservation(
+        self, property_id: str, request: SearchRequest, idempotency_key: str, simulate_failures: int = 0
+    ) -> str:
         async with httpx.AsyncClient(base_url=self.base_url) as client:
             response = await client.post(
                 "/atlas/v1/reservations",
@@ -56,6 +65,8 @@ class AtlasAdapter(SupplierAdapter):
                     "check_in": request.check_in.isoformat(),
                     "check_out": request.check_out.isoformat(),
                     "num_rooms": request.rooms,
+                    "idempotency_key": idempotency_key,
+                    "simulate_failures": simulate_failures,
                 },
             )
             response.raise_for_status()
@@ -66,6 +77,9 @@ class AtlasAdapter(SupplierAdapter):
             response = await client.get(f"/atlas/v1/reservations/{reservation_reference}")
             response.raise_for_status()
             return response.json()["state"]
+
+    def normalize_reservation_status(self, raw_status: str) -> str:
+        return ATLAS_RESERVATION_STATUS_MAP.get(raw_status, "failed")
 
     async def cancel_reservation(self, reservation_reference: str) -> bool:
         async with httpx.AsyncClient(base_url=self.base_url) as client:

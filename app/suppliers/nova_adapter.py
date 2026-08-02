@@ -10,6 +10,13 @@ from app.config import NOVA_API_BASE_URL
 from app.schemas import AvailabilityStatus, HotelOffer, SearchRequest
 from app.suppliers.base import SupplierAdapter
 
+# Nova's booking-status wording -> our normalised booking status.
+NOVA_BOOKING_STATUS_MAP = {
+    "IN_PROGRESS": "pending",
+    "CONFIRMED": "confirmed",
+    "CANCELLED": "cancelled",
+}
+
 
 class NovaAdapter(SupplierAdapter):
     supplier_id = "nova"
@@ -41,7 +48,9 @@ class NovaAdapter(SupplierAdapter):
 
         return self._to_hotel_offer(property_, request)
 
-    async def create_reservation(self, property_id: str, request: SearchRequest) -> str:
+    async def create_reservation(
+        self, property_id: str, request: SearchRequest, idempotency_key: str, simulate_failures: int = 0
+    ) -> str:
         async with httpx.AsyncClient(base_url=self.base_url) as client:
             response = await client.post(
                 "/nova/v2/bookings",
@@ -50,6 +59,8 @@ class NovaAdapter(SupplierAdapter):
                     "checkInDate": request.check_in.isoformat(),
                     "checkOutDate": request.check_out.isoformat(),
                     "roomsRequested": request.rooms,
+                    "idempotencyKey": idempotency_key,
+                    "simulateFailures": simulate_failures,
                 },
             )
             response.raise_for_status()
@@ -60,6 +71,9 @@ class NovaAdapter(SupplierAdapter):
             response = await client.get(f"/nova/v2/bookings/{reservation_reference}")
             response.raise_for_status()
             return response.json()["bookingStatus"]
+
+    def normalize_reservation_status(self, raw_status: str) -> str:
+        return NOVA_BOOKING_STATUS_MAP.get(raw_status, "failed")
 
     async def cancel_reservation(self, reservation_reference: str) -> bool:
         async with httpx.AsyncClient(base_url=self.base_url) as client:
