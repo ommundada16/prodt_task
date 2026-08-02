@@ -229,6 +229,7 @@
       lastOffers = await res.json();
       renderResults(lastOffers);
     } catch (err) {
+      console.error('Search failed:', err);
       statusLine.textContent = 'Something went wrong while searching. Please try again.';
     }
   });
@@ -313,6 +314,7 @@
       if (!res.ok) throw new Error('Could not start booking');
       workflowId = (await res.json()).workflow_id;
     } catch (err) {
+      console.error('Could not start booking:', err);
       showFinal('failed', 'Could not reach the booking service. Is the Temporal server running?');
       return;
     }
@@ -326,6 +328,7 @@
         status = (await res.json()).status;
         markStep(status);
       } catch (err) {
+        console.error('Lost connection while polling booking status:', err);
         showFinal('failed', 'Lost connection while checking booking status.');
         return;
       }
