@@ -1,6 +1,7 @@
 """FastAPI app exposing the unified hotel search and booking endpoints."""
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from temporalio.client import WorkflowFailureError
 
 from app.db.database import init_db
@@ -23,6 +24,12 @@ SUPPLIER_ADAPTERS = [AtlasAdapter(), NovaAdapter()]
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
+
+
+@app.get("/", include_in_schema=False)
+def home():
+    """Simple search-and-book demo page. /docs remains the API reference for developers."""
+    return FileResponse("app/static/index.html")
 
 
 @app.post("/search/hotels", response_model=list[HotelOffer])

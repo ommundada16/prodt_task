@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hotel Search</title>
+<style>
+  :root {
+    --accent: #2563eb;
+    --accent-dark: #1d4ed8;
+    --bg: #f4f6f9;
+    --card-bg: #ffffff;
+    --border: #e2e6ec;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --success: #16a34a;
+    --danger: #dc2626;
+    --warning: #d97706;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    background: var(--accent);
+    color: white;
+    padding: 24px 20px;
+    text-align: center;
+  }
+  header h1 { margin: 0; font-size: 1.6rem; }
+  header p { margin: 6px 0 0; opacity: 0.9; font-size: 0.95rem; }
+
+  main {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 24px 16px 60px;
+  }
+
+  form.search-form {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 14px;
+    align-items: end;
+  }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 0.82rem; color: var(--muted); font-weight: 600; }
+  .field input {
+    padding: 9px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.95rem;
+  }
+  button {
+    cursor: pointer;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+  .search-form button {
+    grid-column: 1 / -1;
+    background: var(--accent);
+    color: white;
+    padding: 11px;
+  }
+  .search-form button:hover { background: var(--accent-dark); }
+
+  #status-line { margin: 16px 2px; color: var(--muted); font-size: 0.9rem; min-height: 1.2em; }
+
+  .results { display: flex; flex-direction: column; gap: 14px; }
+  .offer-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .offer-main h3 { margin: 0 0 4px; font-size: 1.1rem; }
+  .offer-main .location { color: var(--muted); font-size: 0.88rem; margin-bottom: 8px; }
+  .badge {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 999px;
+    margin-right: 6px;
+  }
+  .badge.supplier { background: #eef2ff; color: #4338ca; }
+  .badge.available { background: #dcfce7; color: var(--success); }
+  .badge.on_request { background: #fef3c7; color: var(--warning); }
+  .offer-main .policy { font-size: 0.82rem; color: var(--muted); margin-top: 8px; }
+
+  .offer-price { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; min-width: 150px; }
+  .offer-price .total { font-size: 1.3rem; font-weight: 700; }
+  .offer-price .breakdown { font-size: 0.78rem; color: var(--muted); }
+  .offer-price button {
+    background: var(--accent);
+    color: white;
+    padding: 9px 16px;
+  }
+  .offer-price button:hover { background: var(--accent-dark); }
+  .offer-price button:disabled { background: #9ca3af; cursor: not-allowed; }
+
+  /* Booking modal */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(17, 24, 39, 0.5);
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+  }
+  .hidden { display: none; }
+  .modal {
+    background: var(--card-bg);
+    border-radius: 14px;
+    max-width: 460px;
+    width: 100%;
+    padding: 26px;
+  }
+  .modal h2 { margin-top: 0; font-size: 1.2rem; }
+  .steps { list-style: none; padding: 0; margin: 20px 0; }
+  .steps li {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 0; color: var(--muted); font-size: 0.92rem;
+  }
+  .steps li .dot {
+    width: 20px; height: 20px; border-radius: 50%;
+    border: 2px solid var(--border); flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 0.75rem; color: white;
+  }
+  .steps li.done .dot { background: var(--success); border-color: var(--success); }
+  .steps li.done { color: var(--text); }
+  .steps li.active .dot { border-color: var(--accent); }
+  .steps li.active { color: var(--text); font-weight: 600; }
+
+  .final-message { padding: 14px; border-radius: 10px; font-size: 0.92rem; margin-top: 10px; }
+  .final-message.confirmed { background: #dcfce7; color: #14532d; }
+  .final-message.failed, .final-message.cancelled { background: #fee2e2; color: #7f1d1d; }
+  .final-message.manual_review { background: #fef3c7; color: #78350f; }
+
+  .modal .close-btn {
+    margin-top: 18px; width: 100%; padding: 10px;
+    background: #f3f4f6; color: var(--text);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Find and Book a Hotel</h1>
+  <p>Searches multiple hotel suppliers at once and shows you the best options.</p>
+</header>
+
+<main>
+  <form class="search-form" id="search-form">
+    <div class="field">
+      <label for="destination">Destination</label>
+      <input id="destination" type="text" placeholder="e.g. Mumbai" required />
+    </div>
+    <div class="field">
+      <label for="check_in">Check-in</label>
+      <input id="check_in" type="date" required />
+    </div>
+    <div class="field">
+      <label for="check_out">Check-out</label>
+      <input id="check_out" type="date" required />
+    </div>
+    <div class="field">
+      <label for="guests">Guests</label>
+      <input id="guests" type="number" min="1" value="2" required />
+    </div>
+    <div class="field">
+      <label for="rooms">Rooms</label>
+      <input id="rooms" type="number" min="1" value="1" required />
+    </div>
+    <button type="submit">Search Hotels</button>
+  </form>
+
+  <div id="status-line"></div>
+  <div class="results" id="results"></div>
+</main>
+
+<div class="overlay hidden" id="booking-overlay">
+  <div class="modal">
+    <h2 id="booking-title">Booking your room</h2>
+    <ul class="steps" id="booking-steps">
+      <li id="step-revalidate"><span class="dot"></span> Checking current price</li>
+      <li id="step-reserve"><span class="dot"></span> Reserving with the supplier</li>
+      <li id="step-confirm"><span class="dot"></span> Waiting for hotel confirmation</li>
+    </ul>
+    <div id="booking-final"></div>
+    <button class="close-btn hidden" id="booking-close">Close</button>
+  </div>
+</div>
+
+<script>
+  const resultsEl = document.getElementById('results');
+  const statusLine = document.getElementById('status-line');
+  let lastOffers = [];
+  let lastSearch = null;
+
+  document.getElementById('search-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    lastSearch = {
+      destination: document.getElementById('destination').value,
+      check_in: document.getElementById('check_in').value,
+      check_out: document.getElementById('check_out').value,
+      guests: Number(document.getElementById('guests').value),
+      rooms: Number(document.getElementById('rooms').value),
+    };
+    resultsEl.innerHTML = '';
+    statusLine.textContent = 'Searching Atlas Hotels and Nova Stays...';
+
+    try {
+      const res = await fetch('/search/hotels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(lastSearch),
+      });
+      if (!res.ok) throw new Error('Search request failed');
+      lastOffers = await res.json();
+      renderResults(lastOffers);
+    } catch (err) {
+      statusLine.textContent = 'Something went wrong while searching. Please try again.';
+    }
+  });
+
+  function renderResults(offers) {
+    if (offers.length === 0) {
+      statusLine.textContent = 'No rooms found for that search. Try different dates or a different destination.';
+      return;
+    }
+    statusLine.textContent = `Found ${offers.length} room option(s), best value first.`;
+    resultsEl.innerHTML = offers.map((offer, index) => `
+      <div class="offer-card">
+        <div class="offer-main">
+          <span class="badge supplier">${offer.supplier_id}</span>
+          <span class="badge ${offer.availability_status}">${offer.availability_status === 'available' ? 'Available' : 'On Request'}</span>
+          <h3>${offer.property_name}</h3>
+          <div class="location">${offer.location} &middot; ${offer.room_type}</div>
+          <div class="policy">${offer.cancellation_policy}</div>
+        </div>
+        <div class="offer-price">
+          <div class="total">${offer.currency} ${offer.total_price.toFixed(2)}</div>
+          <div class="breakdown">Room ${offer.currency} ${offer.base_price.toFixed(2)} + taxes/fees ${offer.currency} ${offer.taxes_and_fees.toFixed(2)}</div>
+          <button onclick="startBooking(${index})">Book Now</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  const overlay = document.getElementById('booking-overlay');
+  const closeBtn = document.getElementById('booking-close');
+  const finalBox = document.getElementById('booking-final');
+  const stepEls = {
+    revalidating: document.getElementById('step-revalidate'),
+    reserving: document.getElementById('step-reserve'),
+    waiting_for_confirmation: document.getElementById('step-confirm'),
+  };
+
+  closeBtn.addEventListener('click', () => overlay.classList.add('hidden'));
+
+  function resetModal() {
+    finalBox.innerHTML = '';
+    closeBtn.classList.add('hidden');
+    Object.values(stepEls).forEach(el => el.classList.remove('active', 'done'));
+  }
+
+  function markStep(status) {
+    const order = ['revalidating', 'reserving', 'waiting_for_confirmation'];
+    // "saving_booking_record" is part of the reserving phase from the user's point of view.
+    const displayStatus = status === 'saving_booking_record' ? 'reserving' : status;
+    const currentIndex = order.indexOf(displayStatus);
+    order.forEach((key, i) => {
+      stepEls[key].classList.remove('active', 'done');
+      if (currentIndex === -1) return;
+      if (i < currentIndex) stepEls[key].classList.add('done');
+      else if (i === currentIndex) stepEls[key].classList.add('active');
+    });
+  }
+
+  async function startBooking(index) {
+    const offer = lastOffers[index];
+    resetModal();
+    overlay.classList.remove('hidden');
+
+    const idempotencyKey = crypto.randomUUID();
+    let workflowId;
+    try {
+      const res = await fetch('/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idempotency_key: idempotencyKey,
+          supplier_id: offer.supplier_id,
+          supplier_property_id: offer.supplier_property_id,
+          destination: lastSearch.destination,
+          check_in: lastSearch.check_in,
+          check_out: lastSearch.check_out,
+          guests: lastSearch.guests,
+          rooms: lastSearch.rooms,
+          expected_total_price: offer.total_price,
+        }),
+      });
+      if (!res.ok) throw new Error('Could not start booking');
+      workflowId = (await res.json()).workflow_id;
+    } catch (err) {
+      showFinal('failed', 'Could not reach the booking service. Is the Temporal server running?');
+      return;
+    }
+
+    const terminal = ['confirmed', 'failed', 'cancelled', 'manual_review'];
+    let status = 'started';
+    while (!terminal.includes(status)) {
+      await new Promise(r => setTimeout(r, 1200));
+      try {
+        const res = await fetch(`/bookings/${workflowId}/status`);
+        status = (await res.json()).status;
+        markStep(status);
+      } catch (err) {
+        showFinal('failed', 'Lost connection while checking booking status.');
+        return;
+      }
+    }
+
+    const resultRes = await fetch(`/bookings/${workflowId}/result`);
+    const result = await resultRes.json();
+    showFinal(result.status, describeResult(result));
+  }
+
+  function describeResult(result) {
+    switch (result.status) {
+      case 'confirmed':
+        return `Your booking is confirmed. Supplier reference: ${result.supplier_reservation_reference}`;
+      case 'failed':
+        return result.reason || 'The booking could not be completed.';
+      case 'cancelled':
+        return 'This booking was cancelled.';
+      case 'manual_review':
+        return `We could not fully confirm this automatically (${result.reason || 'unexpected supplier response'}). Our team will follow up.`;
+      default:
+        return 'Booking finished with an unexpected status.';
+    }
+  }
+
+  function showFinal(status, message) {
+    markStep(status === 'confirmed' ? 'done' : status);
+    const labels = { confirmed: 'Booking confirmed', failed: 'Booking failed', cancelled: 'Booking cancelled', manual_review: 'Needs manual review' };
+    finalBox.innerHTML = `<div class="final-message ${status}"><strong>${labels[status] || status}</strong><br>${message}</div>`;
+    closeBtn.classList.remove('hidden');
+  }
+</script>
+</body>
+</html>
