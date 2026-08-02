@@ -6,6 +6,7 @@ import uuid
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from temporalio.exceptions import WorkflowAlreadyStartedError
 
 from app.db.database import get_db, init_db
 from app.db.repository import save_search_and_offers
@@ -94,12 +95,18 @@ async def create_booking(request: BookHotelRequest, http_request: Request):
         simulate_supplier_failures=request.simulate_supplier_failures,
     )
 
-    await client.start_workflow(
-        BookingWorkflow.run,
-        workflow_input,
-        id=workflow_id,
-        task_queue=TASK_QUEUE,
-    )
+    try:
+        await client.start_workflow(
+            BookingWorkflow.run,
+            workflow_input,
+            id=workflow_id,
+            task_queue=TASK_QUEUE,
+        )
+    except WorkflowAlreadyStartedError:
+        # Same idempotency_key submitted again while the original booking
+        # is still active (e.g. a double click, or a retried HTTP call) -
+        # this is not an error, just attach to the existing booking.
+        logger.info(f"request_id={http_request.state.request_id} action=duplicate_booking_ignored workflow_id={workflow_id}")
     return {"workflow_id": workflow_id}
 
 
