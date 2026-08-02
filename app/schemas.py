@@ -46,3 +46,22 @@ class SearchRequest(BaseModel):
     check_out: date
     guests: int
     rooms: int
+
+
+class BookHotelRequest(BaseModel):
+    """What a client sends to start a booking. idempotency_key should be
+    generated client-side (e.g. a UUID kept stable across retries of the
+    same user action) so that double-submitting a booking request - a
+    double click, a retried HTTP call - does not create two bookings."""
+
+    idempotency_key: str
+    supplier_id: str
+    supplier_property_id: str
+    destination: str
+    check_in: date
+    check_out: date
+    guests: int
+    rooms: int
+    expected_total_price: float
+    max_price_increase_pct: float = 5.0
+    simulate_supplier_failures: int = 0
