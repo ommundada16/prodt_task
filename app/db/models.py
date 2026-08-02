@@ -56,9 +56,13 @@ class BookingRecord(Base):
 
     id = Column(Integer, primary_key=True)
     idempotency_key = Column(String, unique=True, nullable=False)
-    offer_id = Column(Integer, ForeignKey("offers.id"), nullable=False)
+    # Optional link to the OfferRecord this booking came from, when the
+    # booking was made from a stored search result.
+    offer_id = Column(Integer, ForeignKey("offers.id"), nullable=True)
     workflow_id = Column(String, nullable=False)
     supplier_id = Column(String, nullable=False)
+    supplier_property_id = Column(String, nullable=False)
+    total_price = Column(Float, nullable=False)
     supplier_reservation_reference = Column(String, nullable=True)
     status = Column(String, nullable=False, default="pending")
     created_at = Column(DateTime, default=datetime.utcnow)
