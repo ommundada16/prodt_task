@@ -4,6 +4,8 @@ fees instead of percentage tax, camelCase fields, nested availability)
 into our shared HotelOffer schema.
 """
 
+from typing import Optional
+
 import httpx
 
 from app.config import NOVA_API_BASE_URL
@@ -21,11 +23,17 @@ NOVA_BOOKING_STATUS_MAP = {
 class NovaAdapter(SupplierAdapter):
     supplier_id = "nova"
 
-    def __init__(self, base_url: str = NOVA_API_BASE_URL):
+    def __init__(self, base_url: str = NOVA_API_BASE_URL, transport: Optional[httpx.BaseTransport] = None):
         self.base_url = base_url
+        # transport lets tests point this adapter at the mock Nova app
+        # in-process (via httpx.ASGITransport) instead of real HTTP.
+        self.transport = transport
+
+    def _client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(base_url=self.base_url, transport=self.transport)
 
     async def search_properties(self, request: SearchRequest) -> list[HotelOffer]:
-        async with httpx.AsyncClient(base_url=self.base_url) as client:
+        async with self._client() as client:
             response = await client.post(
                 "/nova/v2/properties/search",
                 json={
@@ -41,7 +49,7 @@ class NovaAdapter(SupplierAdapter):
         return [self._to_hotel_offer(p, request) for p in properties]
 
     async def get_price_and_availability(self, property_id: str, request: SearchRequest) -> HotelOffer:
-        async with httpx.AsyncClient(base_url=self.base_url) as client:
+        async with self._client() as client:
             response = await client.get(f"/nova/v2/properties/{property_id}/rate")
             response.raise_for_status()
             property_ = response.json()
@@ -51,7 +59,7 @@ class NovaAdapter(SupplierAdapter):
     async def create_reservation(
         self, property_id: str, request: SearchRequest, idempotency_key: str, simulate_failures: int = 0
     ) -> str:
-        async with httpx.AsyncClient(base_url=self.base_url) as client:
+        async with self._client() as client:
             response = await client.post(
                 "/nova/v2/bookings",
                 json={
@@ -67,7 +75,7 @@ class NovaAdapter(SupplierAdapter):
             return response.json()["bookingRef"]
 
     async def get_reservation_status(self, reservation_reference: str) -> str:
-        async with httpx.AsyncClient(base_url=self.base_url) as client:
+        async with self._client() as client:
             response = await client.get(f"/nova/v2/bookings/{reservation_reference}")
             response.raise_for_status()
             return response.json()["bookingStatus"]
@@ -76,7 +84,7 @@ class NovaAdapter(SupplierAdapter):
         return NOVA_BOOKING_STATUS_MAP.get(raw_status, "failed")
 
     async def cancel_reservation(self, reservation_reference: str) -> bool:
-        async with httpx.AsyncClient(base_url=self.base_url) as client:
+        async with self._client() as client:
             response = await client.post(f"/nova/v2/bookings/{reservation_reference}/cancel")
             response.raise_for_status()
             return response.json()["bookingStatus"] == "CANCELLED"

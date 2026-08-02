@@ -4,6 +4,8 @@ our shared HotelOffer schema, and translates our shared method calls into
 the specific HTTP calls Atlas expects.
 """
 
+from typing import Optional
+
 import httpx
 
 from app.config import ATLAS_API_BASE_URL
@@ -27,11 +29,17 @@ ATLAS_RESERVATION_STATUS_MAP = {
 class AtlasAdapter(SupplierAdapter):
     supplier_id = "atlas"
 
-    def __init__(self, base_url: str = ATLAS_API_BASE_URL):
+    def __init__(self, base_url: str = ATLAS_API_BASE_URL, transport: Optional[httpx.BaseTransport] = None):
         self.base_url = base_url
+        # transport lets tests point this adapter at the mock Atlas app
+        # in-process (via httpx.ASGITransport) instead of real HTTP.
+        self.transport = transport
+
+    def _client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(base_url=self.base_url, transport=self.transport)
 
     async def search_properties(self, request: SearchRequest) -> list[HotelOffer]:
-        async with httpx.AsyncClient(base_url=self.base_url) as client:
+        async with self._client() as client:
             response = await client.post(
                 "/atlas/v1/search",
                 json={
@@ -47,7 +55,7 @@ class AtlasAdapter(SupplierAdapter):
         return [self._to_hotel_offer(hotel, request) for hotel in hotels]
 
     async def get_price_and_availability(self, property_id: str, request: SearchRequest) -> HotelOffer:
-        async with httpx.AsyncClient(base_url=self.base_url) as client:
+        async with self._client() as client:
             response = await client.get(f"/atlas/v1/hotels/{property_id}/price")
             response.raise_for_status()
             hotel = response.json()
@@ -57,7 +65,7 @@ class AtlasAdapter(SupplierAdapter):
     async def create_reservation(
         self, property_id: str, request: SearchRequest, idempotency_key: str, simulate_failures: int = 0
     ) -> str:
-        async with httpx.AsyncClient(base_url=self.base_url) as client:
+        async with self._client() as client:
             response = await client.post(
                 "/atlas/v1/reservations",
                 json={
@@ -73,7 +81,7 @@ class AtlasAdapter(SupplierAdapter):
             return response.json()["confirmation_code"]
 
     async def get_reservation_status(self, reservation_reference: str) -> str:
-        async with httpx.AsyncClient(base_url=self.base_url) as client:
+        async with self._client() as client:
             response = await client.get(f"/atlas/v1/reservations/{reservation_reference}")
             response.raise_for_status()
             return response.json()["state"]
@@ -82,7 +90,7 @@ class AtlasAdapter(SupplierAdapter):
         return ATLAS_RESERVATION_STATUS_MAP.get(raw_status, "failed")
 
     async def cancel_reservation(self, reservation_reference: str) -> bool:
-        async with httpx.AsyncClient(base_url=self.base_url) as client:
+        async with self._client() as client:
             response = await client.post(f"/atlas/v1/reservations/{reservation_reference}/cancel")
             response.raise_for_status()
             return response.json()["state"] == "CANCELLED"
