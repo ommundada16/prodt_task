@@ -141,5 +141,8 @@ async def get_booking_result(workflow_id: str):
 async def cancel_booking(workflow_id: str):
     client = await get_temporal_client()
     handle = client.get_workflow_handle(workflow_id)
-    await handle.signal(BookingWorkflow.cancel_booking)
+    try:
+        await handle.signal(BookingWorkflow.cancel_booking)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Booking workflow not found")
     return {"workflow_id": workflow_id, "cancel_requested": True}
