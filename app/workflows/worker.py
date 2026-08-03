@@ -8,6 +8,7 @@ Run with: python -m app.workflows.worker
 """
 
 import asyncio
+import os
 
 from temporalio.client import Client
 from temporalio.worker import Worker
@@ -18,7 +19,7 @@ from app.workflows import activities
 from app.workflows.booking_workflow import BookingWorkflow
 
 TASK_QUEUE = "hotel-bookings"
-TEMPORAL_SERVER_ADDRESS = "localhost:7233"
+TEMPORAL_SERVER_ADDRESS = os.getenv("TEMPORAL_SERVER_ADDRESS", "localhost:7233")
 
 
 async def main() -> None:

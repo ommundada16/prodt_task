@@ -32,5 +32,52 @@ services:
     ports:
       - "8080:8080"
 
+  atlas-api:
+    build: .
+    command: uvicorn app.mock_suppliers.atlas_api:app --host 0.0.0.0 --port 9001
+    ports:
+      - "9001:9001"
+
+  nova-api:
+    build: .
+    command: uvicorn app.mock_suppliers.nova_api:app --host 0.0.0.0 --port 9002
+    ports:
+      - "9002:9002"
+
+  main-api:
+    build: .
+    command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000
+    depends_on:
+      - temporal
+      - atlas-api
+      - nova-api
+    environment:
+      - ATLAS_API_BASE_URL=http://atlas-api:9001
+      - NOVA_API_BASE_URL=http://nova-api:9002
+      - TEMPORAL_SERVER_ADDRESS=temporal:7233
+      - DATABASE_URL=sqlite:////app/data/app.db
+    ports:
+      - "8000:8000"
+    volumes:
+      - app_data:/app/data
+    restart: on-failure
+
+  worker:
+    build: .
+    command: python -m app.workflows.worker
+    depends_on:
+      - temporal
+      - atlas-api
+      - nova-api
+    environment:
+      - ATLAS_API_BASE_URL=http://atlas-api:9001
+      - NOVA_API_BASE_URL=http://nova-api:9002
+      - TEMPORAL_SERVER_ADDRESS=temporal:7233
+      - DATABASE_URL=sqlite:////app/data/app.db
+    volumes:
+      - app_data:/app/data
+    restart: on-failure
+
 volumes:
   postgres_data:
+  app_data:
