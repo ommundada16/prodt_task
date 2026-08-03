@@ -39,7 +39,7 @@ graph TD
 
     Client -->|2. POST /bookings| API
     API --> TemporalClient
-    TemporalClient -->|Start Workflow: booking-{idempotency_key}| TemporalServer
+    TemporalClient -->|Start Workflow: booking-IDEMPOTENCY_KEY| TemporalServer
 
     TemporalWorker -->|Poll Task Queue| TemporalServer
     TemporalWorker -->|Execute Activities| AtlasAdapter
@@ -65,8 +65,11 @@ graph TD
 - **Fault Tolerance**: Supplier errors or timeouts are caught gracefully without failing the request (returns partial results).
 - **Filtering**: Automatically excludes `SOLD_OUT` inventory.
 - **Deduplication**: Identifies duplicate listings across suppliers based on normalized property name, location, and room type, retaining the cheapest offer.
-- **Ranking Engine**: Ranks offers based on normalized price, availability type, and supplier historical confidence weighting:
-  $$\text{Score} = \text{SupplierConfidence} - \left(\frac{\text{TotalPrice}}{\text{MaxPrice}}\right) - \text{AvailabilityPenalty}$$
+- **Ranking Engine**: Ranks offers based on normalized price, availability type, and supplier confidence weighting:
+  ```
+  score = supplier_confidence - (total_price / max_price_in_result_set) - availability_penalty
+  ```
+  Higher score ranks first. See `app/services/search_service.py::_rank` for the exact implementation.
 
 ### D. Booking Lifecycle & Temporal Workflows (`app/workflows/`)
 - **`BookingWorkflow`**: State machine driving the booking lifecycle:
@@ -124,8 +127,8 @@ sequenceDiagram
     participant DB as Database
 
     Client->>API: POST /bookings (with idempotency_key)
-    API->>Temporal: start_workflow(id="booking-{key}")
-    API-->>Client: 200 OK {"workflow_id": "booking-{key}"}
+    API->>Temporal: start_workflow, id = booking-IDEMPOTENCY_KEY
+    API-->>Client: 200 OK, workflow_id = booking-IDEMPOTENCY_KEY
 
     Worker->>Temporal: Poll Task Queue
     Worker->>Supplier: Activity: revalidate_offer
