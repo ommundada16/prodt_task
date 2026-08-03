@@ -10,7 +10,7 @@ has to know which supplier a result came from.
 from datetime import date
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 
 class AvailabilityStatus(str, Enum):
@@ -44,8 +44,14 @@ class SearchRequest(BaseModel):
     destination: str
     check_in: date
     check_out: date
-    guests: int
-    rooms: int
+    guests: int = Field(gt=0)
+    rooms: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def check_out_after_check_in(self) -> "SearchRequest":
+        if self.check_out <= self.check_in:
+            raise ValueError("check_out must be after check_in")
+        return self
 
 
 class BookHotelRequest(BaseModel):
@@ -60,8 +66,14 @@ class BookHotelRequest(BaseModel):
     destination: str
     check_in: date
     check_out: date
-    guests: int
-    rooms: int
-    expected_total_price: float
-    max_price_increase_pct: float = 5.0
-    simulate_supplier_failures: int = 0
+    guests: int = Field(gt=0)
+    rooms: int = Field(gt=0)
+    expected_total_price: float = Field(gt=0)
+    max_price_increase_pct: float = Field(default=5.0, ge=0)
+    simulate_supplier_failures: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def check_out_after_check_in(self) -> "BookHotelRequest":
+        if self.check_out <= self.check_in:
+            raise ValueError("check_out must be after check_in")
+        return self
